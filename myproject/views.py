@@ -8,25 +8,24 @@ def login_user(request):
     if request.method == "POST":
         data = json.loads(request.body)
 
-        username = data.get("username")
+        username = data.get("userName") or data.get("username")
         password = data.get("password")
 
         if username == "admin" and password == "admin123":
             return JsonResponse({
-                "message": "Login successful",
-                "username": username,
-                "status": "success"
+                "userName": username,
+                "status": "Authenticated"
             })
 
         return JsonResponse({
             "message": "Invalid username or password",
             "status": "failed"
-        }, status=401)
+        })
 
     return JsonResponse({
-        "message": "Only POST method is allowed"
-    }, status=405)
-
+        "message": "Method not allowed",
+        "status": "failed"
+    })
 
 @csrf_exempt
 def logout_user(request):
