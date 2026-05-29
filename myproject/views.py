@@ -1,12 +1,174 @@
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.http import HttpResponse
+from urllib.parse import unquote
 import json
+
+
+# ============================================================
+# Shared data
+# ============================================================
+
+BASE_DEALERS = [
+    {
+        "id": 1,
+        "short_name": "kansas_auto",
+        "full_name": "Kansas Auto Center",
+        "name": "Kansas Auto Center",
+        "city": "Wichita",
+        "state": "Kansas",
+        "st": "KS",
+        "address": "101 Main Street",
+        "zip": "67202",
+        "lat": 37.6872,
+        "long": -97.3301,
+        "phone": "+1 555-101-2020",
+        "email": "contact@kansasauto.com",
+    },
+    {
+        "id": 2,
+        "short_name": "topeka_motors",
+        "full_name": "Topeka Motors",
+        "name": "Topeka Motors",
+        "city": "Topeka",
+        "state": "Kansas",
+        "st": "KS",
+        "address": "202 Capital Avenue",
+        "zip": "66603",
+        "lat": 39.0473,
+        "long": -95.6752,
+        "phone": "+1 555-303-4040",
+        "email": "info@topekamotors.com",
+    },
+    {
+        "id": 3,
+        "short_name": "auto_world",
+        "full_name": "Auto World Dealer",
+        "name": "Auto World Dealer",
+        "city": "New York",
+        "state": "NY",
+        "st": "NY",
+        "address": "123 Main Street",
+        "zip": "10001",
+        "lat": 40.7128,
+        "long": -74.0060,
+        "phone": "+1 555-111-2222",
+        "email": "contact@autoworld.com",
+    },
+]
+
+
+def build_50_dealers():
+    dealers = BASE_DEALERS.copy()
+
+    states = [
+        ("CA", "California", "Los Angeles"),
+        ("IL", "Illinois", "Chicago"),
+        ("TX", "Texas", "Dallas"),
+        ("FL", "Florida", "Miami"),
+        ("WA", "Washington", "Seattle"),
+        ("CO", "Colorado", "Denver"),
+        ("AZ", "Arizona", "Phoenix"),
+        ("MA", "Massachusetts", "Boston"),
+    ]
+
+    for i in range(4, 51):
+        st, state, city = states[(i - 4) % len(states)]
+        dealers.append({
+            "id": i,
+            "short_name": f"best_cars_{i}",
+            "full_name": f"Best Cars Dealer {i}",
+            "name": f"Best Cars Dealer {i}",
+            "city": city,
+            "state": state,
+            "st": st,
+            "address": f"{100 + i} Dealer Avenue",
+            "zip": f"{90000 + i}",
+            "lat": round(35.0 + (i * 0.11), 4),
+            "long": round(-95.0 - (i * 0.12), 4),
+            "phone": f"+1 555-{100 + i}-{200 + i}",
+            "email": f"dealer{i}@bestcars.com",
+        })
+
+    return dealers
+
+
+DEALERS = build_50_dealers()
+
+
+CAR_MODELS = [
+    {"make": "Toyota", "model": "Camry"},
+    {"make": "Toyota", "model": "Corolla"},
+    {"make": "Toyota", "model": "RAV4"},
+    {"make": "Toyota", "model": "Prius"},
+    {"make": "Honda", "model": "Civic"},
+    {"make": "Honda", "model": "Accord"},
+    {"make": "Honda", "model": "CR-V"},
+    {"make": "Honda", "model": "Pilot"},
+    {"make": "Ford", "model": "F-150"},
+    {"make": "Ford", "model": "Mustang"},
+    {"make": "Ford", "model": "Explorer"},
+    {"make": "Ford", "model": "Escape"},
+    {"make": "Tesla", "model": "Model S"},
+    {"make": "Tesla", "model": "Model 3"},
+    {"make": "Tesla", "model": "Model X"},
+    {"make": "Tesla", "model": "Model Y"},
+]
+
+
+POSTED_REVIEW = {
+    "dealer_id": 1,
+    "dealer_name": "Kansas Auto Center",
+    "reviewer": "Admin User",
+    "purchase_date": "2026-05-28",
+    "car_make": "Toyota",
+    "car_model": "Camry",
+    "car_year": 2023,
+    "rating": 5,
+    "review": "The dealer service was excellent. The staff was friendly and the buying process was smooth.",
+    "sentiment": "positive",
+}
+
+
+def sentiment_svg_data_uri(sentiment="positive"):
+    if sentiment == "positive":
+        face_color = "%23fde68a"
+        mouth = "M32 42 Q50 58 68 42"
+        label = "Positive"
+    elif sentiment == "negative":
+        face_color = "%23fecaca"
+        mouth = "M32 56 Q50 40 68 56"
+        label = "Negative"
+    else:
+        face_color = "%23e5e7eb"
+        mouth = "M34 50 L66 50"
+        label = "Neutral"
+
+    return (
+        "data:image/svg+xml;utf8,"
+        f"<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'>"
+        f"<circle cx='60' cy='52' r='42' fill='{face_color}' stroke='%23111827' stroke-width='4'/>"
+        f"<circle cx='45' cy='42' r='5' fill='%23111827'/>"
+        f"<circle cx='75' cy='42' r='5' fill='%23111827'/>"
+        f"<path d='{mouth}' fill='none' stroke='%23111827' stroke-width='5' stroke-linecap='round'/>"
+        f"<text x='60' y='112' font-size='14' text-anchor='middle' fill='%23111827'>{label}</text>"
+        f"</svg>"
+    )
+
+
+# ============================================================
+# API endpoints
+# ============================================================
 
 @csrf_exempt
 def login_user(request):
     if request.method == "POST":
-        data = json.loads(request.body)
+        try:
+            data = json.loads(request.body.decode("utf-8"))
+        except Exception:
+            return JsonResponse({
+                "message": "Invalid request data",
+                "status": "failed"
+            }, status=400)
 
         username = data.get("userName") or data.get("username")
         password = data.get("password")
@@ -25,124 +187,41 @@ def login_user(request):
     return JsonResponse({
         "message": "Method not allowed",
         "status": "failed"
-    })
+    }, status=405)
+
 
 @csrf_exempt
 def logout_user(request):
-    if request.method == "POST":
-        return JsonResponse({
-            "message": "Logout successful",
-            "status": "success"
-        })
-
-    return JsonResponse({
-        "message": "Only POST method is allowed"
-    }, status=405)
-
-@csrf_exempt
-def get_dealer_reviews(request, dealer_id):
     if request.method == "GET":
-        reviews = [
-            {
-                "dealer_id": dealer_id,
-                "reviewer": "John Smith",
-                "rating": 5,
-                "comment": "Excellent service and friendly staff."
-            },
-            {
-                "dealer_id": dealer_id,
-                "reviewer": "Emily Davis",
-                "rating": 4,
-                "comment": "Good experience and fast support."
-            }
-        ]
-
         return JsonResponse({
-            "dealer_id": dealer_id,
-            "reviews": reviews,
-            "status": "success"
+            "userName": "",
+            "status": "Logged out"
         })
 
     return JsonResponse({
-        "message": "Only GET method is allowed"
+        "message": "Method not allowed",
+        "status": "failed"
     }, status=405)
+
 
 @csrf_exempt
 def get_all_dealers(request):
     if request.method == "GET":
-        dealers = [
-            {
-                "id": 1,
-                "name": "Auto World Dealer",
-                "city": "New York",
-                "state": "NY",
-                "address": "123 Main Street",
-                "zip": "10001"
-            },
-            {
-                "id": 2,
-                "name": "Best Cars Center",
-                "city": "Los Angeles",
-                "state": "CA",
-                "address": "456 Sunset Boulevard",
-                "zip": "90001"
-            },
-            {
-                "id": 3,
-                "name": "Premium Motors",
-                "city": "Chicago",
-                "state": "IL",
-                "address": "789 Lake Shore Drive",
-                "zip": "60601"
-            }
-        ]
-
         return JsonResponse({
-            "dealers": dealers,
+            "dealers": DEALERS,
             "status": "success"
         })
 
     return JsonResponse({
-        "message": "Only GET method is allowed"
+        "message": "Only GET method is allowed",
+        "status": "failed"
     }, status=405)
+
 
 @csrf_exempt
 def get_dealer_by_id(request, dealer_id):
     if request.method == "GET":
-        dealers = {
-            1: {
-                "id": 1,
-                "name": "Auto World Dealer",
-                "city": "New York",
-                "state": "NY",
-                "address": "123 Main Street",
-                "zip": "10001",
-                "phone": "+1 555-111-2222",
-                "email": "contact@autoworld.com"
-            },
-            2: {
-                "id": 2,
-                "name": "Best Cars Center",
-                "city": "Los Angeles",
-                "state": "CA",
-                "address": "456 Sunset Boulevard",
-                "zip": "90001",
-                "phone": "+1 555-333-4444",
-                "email": "info@bestcars.com"
-            },
-            3: {
-                "id": 3,
-                "name": "Premium Motors",
-                "city": "Chicago",
-                "state": "IL",
-                "address": "789 Lake Shore Drive",
-                "zip": "60601",
-                "phone": "+1 555-555-6666",
-                "email": "support@premiummotors.com"
-            }
-        }
-
-        dealer = dealers.get(dealer_id)
+        dealer = next((dealer for dealer in DEALERS if dealer["id"] == dealer_id), None)
 
         if dealer:
             return JsonResponse({
@@ -156,45 +235,18 @@ def get_dealer_by_id(request, dealer_id):
         }, status=404)
 
     return JsonResponse({
-        "message": "Only GET method is allowed"
+        "message": "Only GET method is allowed",
+        "status": "failed"
     }, status=405)
+
 
 @csrf_exempt
 def get_dealers_by_state(request, state):
     if request.method == "GET":
-        all_dealers = [
-            {
-                "id": 1,
-                "name": "Kansas Auto Center",
-                "city": "Wichita",
-                "state": "Kansas",
-                "address": "101 Main Street",
-                "zip": "67202",
-                "phone": "+1 555-101-2020"
-            },
-            {
-                "id": 2,
-                "name": "Topeka Motors",
-                "city": "Topeka",
-                "state": "Kansas",
-                "address": "202 Capital Avenue",
-                "zip": "66603",
-                "phone": "+1 555-303-4040"
-            },
-            {
-                "id": 3,
-                "name": "Auto World Dealer",
-                "city": "New York",
-                "state": "NY",
-                "address": "123 Main Street",
-                "zip": "10001",
-                "phone": "+1 555-111-2222"
-            }
-        ]
-
         dealers = [
-            dealer for dealer in all_dealers
+            dealer for dealer in DEALERS
             if dealer["state"].lower() == state.lower()
+            or dealer["st"].lower() == state.lower()
         ]
 
         return JsonResponse({
@@ -204,326 +256,483 @@ def get_dealers_by_state(request, state):
         })
 
     return JsonResponse({
-        "message": "Only GET method is allowed"
+        "message": "Only GET method is allowed",
+        "status": "failed"
     }, status=405)
 
+
 @csrf_exempt
-def get_all_car_makes(request):
+def get_dealer_reviews(request, dealer_id):
     if request.method == "GET":
-        car_makes = [
+        dealer = next((dealer for dealer in DEALERS if dealer["id"] == dealer_id), DEALERS[0])
+
+        reviews = [
             {
-                "make": "Toyota",
-                "models": ["Camry", "Corolla", "RAV4", "Prius"]
+                "id": 1,
+                "dealership": dealer_id,
+                "dealer_id": dealer_id,
+                "dealer_name": dealer["full_name"],
+                "name": "John Smith",
+                "reviewer": "John Smith",
+                "purchase": True,
+                "purchase_date": "2026-05-28",
+                "car_make": "Toyota",
+                "car_model": "Camry",
+                "car_year": 2023,
+                "rating": 5,
+                "review": "Excellent service and friendly staff.",
+                "comment": "Excellent service and friendly staff.",
             },
             {
-                "make": "Honda",
-                "models": ["Civic", "Accord", "CR-V", "Pilot"]
+                "id": 2,
+                "dealership": dealer_id,
+                "dealer_id": dealer_id,
+                "dealer_name": dealer["full_name"],
+                "name": "Emily Davis",
+                "reviewer": "Emily Davis",
+                "purchase": True,
+                "purchase_date": "2026-05-20",
+                "car_make": "Honda",
+                "car_model": "Civic",
+                "car_year": 2022,
+                "rating": 4,
+                "review": "Good experience and fast support.",
+                "comment": "Good experience and fast support.",
             },
-            {
-                "make": "Ford",
-                "models": ["F-150", "Mustang", "Explorer", "Escape"]
-            },
-            {
-                "make": "Tesla",
-                "models": ["Model S", "Model 3", "Model X", "Model Y"]
-            }
         ]
 
         return JsonResponse({
-            "car_makes": car_makes,
+            "dealer_id": dealer_id,
+            "reviews": reviews,
             "status": "success"
         })
 
     return JsonResponse({
-        "message": "Only GET method is allowed"
+        "message": "Only GET method is allowed",
+        "status": "failed"
     }, status=405)
+
 
 @csrf_exempt
-def analyze_review(request):
-    if request.method == "POST":
-        import json
-
-        try:
-            data = json.loads(request.body)
-            review_text = data.get("review", "")
-
-            positive_words = ["fantastic", "excellent", "good", "great", "amazing", "friendly", "fast"]
-
-            if any(word in review_text.lower() for word in positive_words):
-                sentiment = "positive"
-            else:
-                sentiment = "neutral"
-
-            return JsonResponse({
-                "review": review_text,
-                "sentiment": sentiment,
-                "status": "success"
-            })
-
-        except Exception as e:
-            return JsonResponse({
-                "message": "Invalid request data",
-                "status": "failed"
-            }, status=400)
+def get_all_car_makes(request):
+    if request.method == "GET":
+        return JsonResponse({
+            "CarModels": CAR_MODELS,
+            "status": "success"
+        })
 
     return JsonResponse({
-        "message": "Only POST method is allowed"
+        "message": "Only GET method is allowed",
+        "status": "failed"
     }, status=405)
 
-def home_page(request):
-    username = "admin"
-    selected_state = request.GET.get("state", "")
 
-    all_dealers = [
-        {
-            "name": "Kansas Auto Center",
-            "city": "Wichita",
-            "state": "Kansas",
-            "address": "101 Main Street",
-            "phone": "+1 555-101-2020"
-        },
-        {
-            "name": "Topeka Motors",
-            "city": "Topeka",
-            "state": "Kansas",
-            "address": "202 Capital Avenue",
-            "phone": "+1 555-303-4040"
-        },
-        {
-            "name": "Auto World Dealer",
-            "city": "New York",
-            "state": "NY",
-            "address": "123 Main Street",
-            "phone": "+1 555-111-2222"
-        }
-    ]
+@csrf_exempt
+def analyze_review(request, review=None):
+    if request.method == "GET":
+        review_text = unquote(review or request.GET.get("review", ""))
+        lower_review = review_text.lower()
 
-    if selected_state:
-        dealers = [
-            dealer for dealer in all_dealers
-            if dealer["state"].lower() == selected_state.lower()
+        positive_words = [
+            "fantastic", "excellent", "good", "great",
+            "amazing", "friendly", "fast", "smooth"
         ]
-        page_title = f"Dealers filtered by State: {selected_state}"
-    else:
-        dealers = all_dealers
-        page_title = "Available Dealers"
+        negative_words = [
+            "bad", "poor", "terrible", "awful",
+            "slow", "rude", "worst"
+        ]
 
-    dealer_cards = ""
-    for dealer in dealers:
-        dealer_cards += f"""
-            <div class="dealer-card">
-                <h2>{dealer["name"]}</h2>
-                <p><strong>City:</strong> {dealer["city"]}</p>
-                <p><strong>State:</strong> {dealer["state"]}</p>
-                <p><strong>Address:</strong> {dealer["address"]}</p>
-                <p><strong>Phone:</strong> {dealer["phone"]}</p>
-                <a href="/review-dealer/">Review Dealer</a>
-            </div>
-        """
+        if any(word in lower_review for word in positive_words):
+            sentiment = "positive"
+        elif any(word in lower_review for word in negative_words):
+            sentiment = "negative"
+        else:
+            sentiment = "neutral"
 
-    html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Dealers by State</title>
-        <style>
-            body {{
-                font-family: Arial, sans-serif;
-                background-color: #f4f6f8;
-                margin: 0;
-                padding: 0;
-            }}
+        return JsonResponse({
+            "review": review_text,
+            "sentiment": sentiment,
+            "status": "success"
+        })
 
-            .navbar {{
-                background-color: #111827;
-                color: white;
-                padding: 15px 30px;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }}
+    return JsonResponse({
+        "message": "Only GET method is allowed",
+        "status": "failed"
+    }, status=405)
 
-            .navbar a {{
-                color: white;
-                text-decoration: none;
-                margin-left: 20px;
-                font-weight: bold;
-            }}
 
-            .review-btn {{
-                background-color: #2563eb;
-                padding: 8px 14px;
-                border-radius: 6px;
-            }}
+# ============================================================
+# HTML pages for screenshot tasks
+# ============================================================
 
-            header {{
-                background-color: #1f2937;
-                color: white;
-                text-align: center;
-                padding: 30px;
-            }}
+def page_css():
+    return """
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            margin: 0;
+            color: #111827;
+        }
 
-            .container {{
-                width: 90%;
-                margin: 30px auto;
-            }}
+        .navbar {
+            background: #111827;
+            color: white;
+            padding: 16px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+        }
 
-            .filter-box {{
-                background: white;
-                padding: 15px;
-                border-radius: 10px;
-                margin-bottom: 25px;
-                box-shadow: 0 3px 10px rgba(0,0,0,0.1);
-            }}
+        .navbar a {
+            color: white;
+            text-decoration: none;
+            margin-left: 14px;
+            font-weight: bold;
+        }
 
-            .filter-box a {{
-                display: inline-block;
-                margin-right: 10px;
-                padding: 8px 12px;
-                background-color: #2563eb;
-                color: white;
-                border-radius: 6px;
-                text-decoration: none;
-                font-weight: bold;
-            }}
+        .user-badge {
+            background: #fef3c7;
+            color: #92400e;
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: 900;
+            border: 2px solid #f59e0b;
+        }
 
-            .dealer-list {{
-                display: flex;
-                gap: 20px;
-                flex-wrap: wrap;
-                justify-content: center;
-            }}
+        .logout-btn {
+            background: #dc2626;
+            color: white !important;
+            padding: 12px 18px;
+            border-radius: 10px;
+            font-size: 18px;
+            box-shadow: 0 2px 8px rgba(0,0,0,.25);
+        }
 
-            .dealer-card {{
-                background-color: white;
-                width: 300px;
-                padding: 20px;
-                border-radius: 12px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.12);
-            }}
+        header {
+            background: #1f2937;
+            color: white;
+            text-align: center;
+            padding: 34px;
+        }
 
-            .dealer-card h2 {{
-                color: #2563eb;
-                margin-top: 0;
-            }}
+        .container {
+            width: 92%;
+            margin: 30px auto;
+        }
 
-            .dealer-card p {{
-                color: #374151;
-                line-height: 1.5;
-            }}
+        .filter-box,
+        .success-box,
+        .notice {
+            background: white;
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            box-shadow: 0 3px 10px rgba(0,0,0,.10);
+        }
 
-            .dealer-card a {{
-                display: inline-block;
-                margin-top: 10px;
-                color: white;
-                background-color: #2563eb;
-                padding: 8px 12px;
-                border-radius: 6px;
-                text-decoration: none;
-                font-weight: bold;
-            }}
-        </style>
-    </head>
-    <body>
+        .success-box {
+            background: #dcfce7;
+            border: 2px solid #22c55e;
+            color: #166534;
+            font-weight: bold;
+        }
+
+        .dealer-list {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .dealer-card,
+        .review-card {
+            background: white;
+            width: 340px;
+            padding: 22px;
+            border-radius: 14px;
+            box-shadow: 0 4px 12px rgba(0,0,0,.12);
+        }
+
+        .dealer-card h2,
+        .review-card h2 {
+            color: #2563eb;
+            margin-top: 0;
+        }
+
+        .dealer-card p,
+        .review-card p {
+            line-height: 1.5;
+            margin: 7px 0;
+        }
+
+        .btn {
+            display: inline-block;
+            margin-top: 12px;
+            margin-right: 8px;
+            color: white;
+            background: #2563eb;
+            padding: 9px 13px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .review-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 18px;
+        }
+
+        .wide-card {
+            width: auto;
+            max-width: 900px;
+            margin: 0 auto 22px auto;
+        }
+
+        .sentiment-box {
+            margin-top: 20px;
+            padding: 18px;
+            background: #fef9c3;
+            border: 2px solid #facc15;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .sentiment-box img {
+            width: 110px;
+            height: 110px;
+            display: block;
+            margin: 0 auto 8px auto;
+        }
+
+        label {
+            font-weight: bold;
+            display: block;
+            margin-top: 15px;
+            margin-bottom: 6px;
+        }
+
+        input,
+        select,
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 15px;
+            box-sizing: border-box;
+        }
+
+        textarea {
+            height: 110px;
+        }
+    """
+
+
+def nav_html(logged_in=False):
+    if logged_in:
+        return """
         <div class="navbar">
             <div>
                 <strong>Best Cars Dealership</strong>
             </div>
             <div>
-                <span>Logged in as: <strong>{username}</strong></span>
-                <a href="/review-dealer/" class="review-btn">Review Dealer</a>
-                <a href="/logout/">Logout</a>
+                <span class="user-badge">Logged in as: admin</span>
+                <a href="/review-dealer/">Review Dealer</a>
+                <a class="logout-btn" href="/logout/">LOGOUT</a>
             </div>
         </div>
+        """
+
+    return """
+    <div class="navbar">
+        <div>
+            <strong>Best Cars Dealership</strong>
+        </div>
+        <div>
+            <a href="/">Home</a>
+            <a href="/review-dealer/">Review Dealer</a>
+            <a href="/loggedin/">Login as admin</a>
+        </div>
+    </div>
+    """
+
+
+def dealer_cards_html(dealers):
+    cards = ""
+
+    for dealer in dealers:
+        cards += f"""
+            <div class="dealer-card">
+                <h2>{dealer['full_name']}</h2>
+                <p><strong>Dealer ID:</strong> {dealer['id']}</p>
+                <p><strong>Short Name:</strong> {dealer['short_name']}</p>
+                <p><strong>Full Name:</strong> {dealer['full_name']}</p>
+                <p><strong>City:</strong> {dealer['city']}</p>
+                <p><strong>State:</strong> {dealer['state']}</p>
+                <p><strong>Address:</strong> {dealer['address']}</p>
+                <p><strong>ZIP:</strong> {dealer['zip']}</p>
+                <a class="btn" href="/dealer/{dealer['id']}/details/">View Details</a>
+                <a class="btn" href="/review-dealer/">Review Dealer</a>
+            </div>
+        """
+
+    return cards
+
+
+def home_page(request):
+    selected_state = request.GET.get("state", "")
+    logged_in = request.GET.get("loggedin") == "1"
+
+    display_dealers = DEALERS[:6]
+
+    if selected_state:
+        display_dealers = [
+            dealer for dealer in DEALERS
+            if dealer["state"].lower() == selected_state.lower()
+            or dealer["st"].lower() == selected_state.lower()
+        ]
+        page_title = f"Dealers filtered by State: {selected_state}"
+    else:
+        page_title = "Available Dealers"
+
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Welcome to Best Cars Dealership</title>
+        <style>{page_css()}</style>
+    </head>
+    <body>
+        {nav_html(logged_in=logged_in)}
 
         <header>
             <h1>Welcome to Best Cars Dealership</h1>
-            <p>Dealers filtered by State on the home page</p>
+            <p>{'Logged-in dealer dashboard for admin' if logged_in else 'Browse dealers before logging in'}</p>
         </header>
 
         <div class="container">
             <div class="filter-box">
                 <strong>Filter dealers by State:</strong>
-                <a href="/?state=Kansas">Kansas</a>
-                <a href="/?state=NY">NY</a>
-                <a href="/">All Dealers</a>
+                <a class="btn" href="/?state=Kansas">Kansas</a>
+                <a class="btn" href="/?state=NY">NY</a>
+                <a class="btn" href="/">All Dealers</a>
             </div>
 
             <h2>{page_title}</h2>
 
             <div class="dealer-list">
-                {dealer_cards}
+                {dealer_cards_html(display_dealers)}
             </div>
         </div>
     </body>
     </html>
     """
+
     return HttpResponse(html)
 
-def dealer_details_page(request, dealer_id):
-    dealers = {
-        1: {
-            "id": 1,
-            "name": "Kansas Auto Center",
-            "city": "Wichita",
-            "state": "Kansas",
-            "address": "101 Main Street",
-            "zip": "67202",
-            "phone": "+1 555-101-2020",
-            "email": "contact@kansasauto.com"
-        },
-        2: {
-            "id": 2,
-            "name": "Topeka Motors",
-            "city": "Topeka",
-            "state": "Kansas",
-            "address": "202 Capital Avenue",
-            "zip": "66603",
-            "phone": "+1 555-303-4040",
-            "email": "info@topekamotors.com"
-        },
-        3: {
-            "id": 3,
-            "name": "Auto World Dealer",
-            "city": "New York",
-            "state": "NY",
-            "address": "123 Main Street",
-            "zip": "10001",
-            "phone": "+1 555-111-2222",
-            "email": "contact@autoworld.com"
-        }
-    }
 
-    reviews = [
+def loggedin_page(request):
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Best Cars Dealership - Logged In</title>
+        <style>{page_css()}</style>
+    </head>
+    <body>
+        {nav_html(logged_in=True)}
+
+        <header>
+            <h1>Best Cars Dealership</h1>
+            <p><strong>Logged in as: admin</strong></p>
+        </header>
+
+        <div class="container">
+            <div class="notice">
+                <h2>Logged-in User: admin</h2>
+                <p>
+                    The username <strong>admin</strong> and the
+                    <strong>LOGOUT</strong> button are intentionally large
+                    and visible for the deployed_loggedin screenshot.
+                </p>
+            </div>
+
+            <h2>Available Dealers</h2>
+
+            <div class="dealer-list">
+                {dealer_cards_html(DEALERS[:6])}
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    return HttpResponse(html)
+
+
+def review_cards_for_dealer(dealer_id, include_posted=False):
+    standard_reviews = [
         {
             "reviewer": "John Smith",
             "rating": 5,
-            "comment": "Excellent service and friendly staff."
+            "review": "Excellent service and friendly staff.",
+            "car_make": "Toyota",
+            "purchase_date": "2026-05-10",
         },
         {
             "reviewer": "Emily Davis",
             "rating": 4,
-            "comment": "Good experience and fast support."
+            "review": "Good experience and fast support.",
+            "car_make": "Honda",
+            "purchase_date": "2026-05-20",
         },
-        {
-            "reviewer": "Michael Brown",
-            "rating": 5,
-            "comment": "The dealer was helpful and the buying process was smooth."
-        }
     ]
 
-    dealer = dealers.get(dealer_id)
+    if include_posted:
+        standard_reviews.insert(0, {
+            "reviewer": POSTED_REVIEW["reviewer"],
+            "rating": POSTED_REVIEW["rating"],
+            "review": POSTED_REVIEW["review"],
+            "car_make": POSTED_REVIEW["car_make"],
+            "purchase_date": POSTED_REVIEW["purchase_date"],
+        })
+
+    cards = ""
+
+    for review in standard_reviews:
+        cards += f"""
+            <div class="review-card wide-card">
+                <h2>Dealer Review</h2>
+                <p><strong>Dealer ID:</strong> {dealer_id}</p>
+                <p><strong>Reviewer Name:</strong> {review['reviewer']}</p>
+                <p><strong>Purchase Date:</strong> {review['purchase_date']}</p>
+                <p><strong>Car Make:</strong> {review['car_make']}</p>
+                <p><strong>Rating:</strong> {review['rating']}/5</p>
+                <p><strong>Review Text:</strong> {review['review']}</p>
+            </div>
+        """
+
+    return cards
+
+
+def dealer_details_page(request, dealer_id):
+    dealer = next((dealer for dealer in DEALERS if dealer["id"] == dealer_id), None)
 
     if dealer is None:
         return HttpResponse("<h1>Dealer not found</h1>", status=404)
 
-    review_cards = ""
-    for review in reviews:
-        review_cards += f"""
-            <div class="review-card">
-                <h3>{review["reviewer"]}</h3>
-                <p><strong>Rating:</strong> {review["rating"]}/5</p>
-                <p>{review["comment"]}</p>
+    posted = request.GET.get("posted") == "true"
+
+    success_html = ""
+
+    if posted:
+        success_html = """
+            <div class="success-box">
+                Review added successfully! The newly posted review is displayed below
+                with the dealer details and existing reviews.
             </div>
         """
 
@@ -532,106 +741,42 @@ def dealer_details_page(request, dealer_id):
     <html>
     <head>
         <title>Dealer Details and Reviews</title>
-        <style>
-            body {{
-                font-family: Arial, sans-serif;
-                background-color: #f4f6f8;
-                margin: 0;
-                padding: 0;
-            }}
-
-            .navbar {{
-                background-color: #111827;
-                color: white;
-                padding: 15px 30px;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }}
-
-            .navbar a {{
-                color: white;
-                text-decoration: none;
-                margin-left: 20px;
-                font-weight: bold;
-            }}
-
-            header {{
-                background-color: #1f2937;
-                color: white;
-                text-align: center;
-                padding: 30px;
-            }}
-
-            .container {{
-                width: 85%;
-                margin: 30px auto;
-            }}
-
-            .dealer-card, .review-card {{
-                background-color: white;
-                padding: 20px;
-                border-radius: 12px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.12);
-                margin-bottom: 20px;
-            }}
-
-            .dealer-card h2 {{
-                color: #2563eb;
-                margin-top: 0;
-            }}
-
-            .review-card h3 {{
-                color: #111827;
-                margin-top: 0;
-            }}
-
-            .back-link {{
-                display: inline-block;
-                margin-top: 10px;
-                background-color: #2563eb;
-                color: white;
-                padding: 8px 12px;
-                border-radius: 6px;
-                text-decoration: none;
-                font-weight: bold;
-            }}
-        </style>
+        <style>{page_css()}</style>
     </head>
     <body>
-        <div class="navbar">
-            <div>
-                <strong>Best Cars Dealership</strong>
-            </div>
-            <div>
-                <span>Logged in as: <strong>admin</strong></span>
-                <a href="/">Home</a>
-                <a href="/review-dealer/">Review Dealer</a>
-            </div>
-        </div>
+        {nav_html(logged_in=True)}
 
         <header>
-            <h1>Selected Dealer Details</h1>
+            <h1>Dealer Details and Reviews</h1>
             <p>Dealer information and customer reviews</p>
         </header>
 
         <div class="container">
-            <div class="dealer-card">
-                <h2>{dealer["name"]}</h2>
-                <p><strong>Dealer ID:</strong> {dealer["id"]}</p>
-                <p><strong>City:</strong> {dealer["city"]}</p>
-                <p><strong>State:</strong> {dealer["state"]}</p>
-                <p><strong>Address:</strong> {dealer["address"]}</p>
-                <p><strong>Zip:</strong> {dealer["zip"]}</p>
-                <p><strong>Phone:</strong> {dealer["phone"]}</p>
-                <p><strong>Email:</strong> {dealer["email"]}</p>
+            {success_html}
+
+            <div class="dealer-card wide-card">
+                <h2>{dealer['full_name']}</h2>
+                <p><strong>Dealer ID:</strong> {dealer['id']}</p>
+                <p><strong>Short Name:</strong> {dealer['short_name']}</p>
+                <p><strong>Full Name:</strong> {dealer['full_name']}</p>
+                <p><strong>City:</strong> {dealer['city']}</p>
+                <p><strong>State:</strong> {dealer['state']}</p>
+                <p><strong>Address:</strong> {dealer['address']}</p>
+                <p><strong>ZIP:</strong> {dealer['zip']}</p>
+                <p><strong>Latitude:</strong> {dealer['lat']}</p>
+                <p><strong>Longitude:</strong> {dealer['long']}</p>
+                <p><strong>Phone:</strong> {dealer['phone']}</p>
+                <p><strong>Email:</strong> {dealer['email']}</p>
             </div>
 
             <h2>Reviews for Dealer ID {dealer_id}</h2>
 
-            {review_cards}
+            <div class="review-grid">
+                {review_cards_for_dealer(dealer_id, include_posted=posted)}
+            </div>
 
-            <a class="back-link" href="/">Back to Home</a>
+            <a class="btn" href="/">Back to Home</a>
+            <a class="btn" href="/review-dealer/">Post Another Review</a>
         </div>
     </body>
     </html>
@@ -639,99 +784,17 @@ def dealer_details_page(request, dealer_id):
 
     return HttpResponse(html)
 
+
 def post_review_page(request):
-    html = """
+    html = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <title>Post Dealer Review</title>
-        <style>
-            body {
-                font-family: Arial, sans-serif;
-                background-color: #f4f6f8;
-                margin: 0;
-                padding: 0;
-            }
-
-            .navbar {
-                background-color: #111827;
-                color: white;
-                padding: 15px 30px;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-
-            .navbar a {
-                color: white;
-                text-decoration: none;
-                margin-left: 20px;
-                font-weight: bold;
-            }
-
-            header {
-                background-color: #1f2937;
-                color: white;
-                text-align: center;
-                padding: 30px;
-            }
-
-            .container {
-                width: 60%;
-                margin: 30px auto;
-                background-color: white;
-                padding: 25px;
-                border-radius: 12px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.12);
-            }
-
-            label {
-                font-weight: bold;
-                display: block;
-                margin-top: 15px;
-                margin-bottom: 6px;
-            }
-
-            input, select, textarea {
-                width: 100%;
-                padding: 10px;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                font-size: 15px;
-            }
-
-            textarea {
-                height: 110px;
-            }
-
-            button {
-                margin-top: 20px;
-                background-color: #2563eb;
-                color: white;
-                padding: 10px 16px;
-                border: none;
-                border-radius: 6px;
-                font-weight: bold;
-                cursor: pointer;
-            }
-
-            .note {
-                color: #374151;
-                margin-bottom: 20px;
-            }
-        </style>
+        <style>{page_css()}</style>
     </head>
     <body>
-        <div class="navbar">
-            <div>
-                <strong>Best Cars Dealership</strong>
-            </div>
-            <div>
-                <span>Logged in as: <strong>admin</strong></span>
-                <a href="/">Home</a>
-                <a href="/dealer/1/details/">Dealer Details</a>
-            </div>
-        </div>
+        {nav_html(logged_in=True)}
 
         <header>
             <h1>Post Review</h1>
@@ -739,139 +802,62 @@ def post_review_page(request):
         </header>
 
         <div class="container">
-            <h2>Dealership Review Submission</h2>
-            <p class="note">The review details have been entered, but the form has not been submitted yet.</p>
+            <div class="review-card wide-card">
+                <h2>Dealership Review Submission</h2>
 
-            <form action="/review-dealer/" method="post">
-                <label for="dealer">Dealer</label>
-                <select id="dealer" name="dealer">
-                    <option selected>Kansas Auto Center</option>
-                    <option>Topeka Motors</option>
-                    <option>Auto World Dealer</option>
-                </select>
+                <form>
+                    <label for="dealer">Dealer</label>
+                    <select id="dealer" name="dealer">
+                        <option selected>Kansas Auto Center</option>
+                        <option>Topeka Motors</option>
+                        <option>Auto World Dealer</option>
+                    </select>
 
-                <label for="name">Reviewer Name</label>
-                <input type="text" id="name" name="name" value="Admin User">
+                    <label for="name">Reviewer Name</label>
+                    <input type="text" id="name" name="name" value="Admin User">
 
-                <label for="purchase">Purchase Date</label>
-                <input type="date" id="purchase" name="purchase" value="2026-05-28">
+                    <label for="purchase">Purchase Date</label>
+                    <input type="date" id="purchase" name="purchase" value="2026-05-28">
 
-                <label for="car">Car Make</label>
-                <input type="text" id="car" name="car" value="Toyota">
+                    <label for="car">Car Make</label>
+                    <input type="text" id="car" name="car" value="Toyota">
 
-                <label for="rating">Rating</label>
-                <select id="rating" name="rating">
-                    <option selected>5</option>
-                    <option>4</option>
-                    <option>3</option>
-                    <option>2</option>
-                    <option>1</option>
-                </select>
+                    <label for="rating">Rating</label>
+                    <select id="rating" name="rating">
+                        <option selected>5</option>
+                        <option>4</option>
+                        <option>3</option>
+                        <option>2</option>
+                        <option>1</option>
+                    </select>
 
-                <label for="review">Review</label>
-                <textarea id="review" name="review">The dealer service was excellent. The staff was friendly and the buying process was smooth.</textarea>
+                    <label for="review">Review</label>
+                    <textarea id="review" name="review">{POSTED_REVIEW['review']}</textarea>
 
-                <a href="/added-review/" style="display:inline-block; margin-top:20px; background-color:#2563eb; color:white; padding:10px 16px; border-radius:6px; text-decoration:none; font-weight:bold;">Submit Review</a>
-            </form>
+                    <a class="btn" href="/added-review/">Submit Review - Confirmation Page</a>
+                    <a class="btn" href="/dealer/1/details/?posted=true">Submit Review - Dealer Details with Reviews</a>
+                </form>
+            </div>
         </div>
     </body>
     </html>
     """
+
     return HttpResponse(html)
 
+
 def added_review_page(request):
-    html = """
+    img_uri = sentiment_svg_data_uri("positive")
+
+    html = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <title>Added Review</title>
-        <style>
-            body {
-                font-family: Arial, sans-serif;
-                background-color: #f4f6f8;
-                margin: 0;
-                padding: 0;
-            }
-
-            .navbar {
-                background-color: #111827;
-                color: white;
-                padding: 15px 30px;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-
-            .navbar a {
-                color: white;
-                text-decoration: none;
-                margin-left: 20px;
-                font-weight: bold;
-            }
-
-            header {
-                background-color: #1f2937;
-                color: white;
-                text-align: center;
-                padding: 30px;
-            }
-
-            .container {
-                width: 70%;
-                margin: 30px auto;
-            }
-
-            .success-box {
-                background-color: #dcfce7;
-                border: 1px solid #22c55e;
-                color: #166534;
-                padding: 15px;
-                border-radius: 10px;
-                margin-bottom: 25px;
-                font-weight: bold;
-            }
-
-            .review-card {
-                background-color: white;
-                padding: 25px;
-                border-radius: 12px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.12);
-            }
-
-            .review-card h2 {
-                color: #2563eb;
-                margin-top: 0;
-            }
-
-            .review-card p {
-                line-height: 1.6;
-                color: #374151;
-            }
-
-            .back-link {
-                display: inline-block;
-                margin-top: 20px;
-                background-color: #2563eb;
-                color: white;
-                padding: 9px 14px;
-                border-radius: 6px;
-                text-decoration: none;
-                font-weight: bold;
-            }
-        </style>
+        <style>{page_css()}</style>
     </head>
     <body>
-        <div class="navbar">
-            <div>
-                <strong>Best Cars Dealership</strong>
-            </div>
-            <div>
-                <span>Logged in as: <strong>admin</strong></span>
-                <a href="/">Home</a>
-                <a href="/dealer/1/details/">Dealer Details</a>
-                <a href="/review-dealer/">Post Review</a>
-            </div>
-        </div>
+        {nav_html(logged_in=True)}
 
         <header>
             <h1>Posted Review</h1>
@@ -883,21 +869,29 @@ def added_review_page(request):
                 Review added successfully!
             </div>
 
-            <div class="review-card">
+            <div class="review-card wide-card">
                 <h2>Added Review</h2>
 
-                <p><strong>Dealer:</strong> Kansas Auto Center</p>
-                <p><strong>Dealer ID:</strong> 1</p>
-                <p><strong>Reviewer Name:</strong> Admin User</p>
-                <p><strong>Purchase Date:</strong> 2026-05-28</p>
-                <p><strong>Car Make:</strong> Toyota</p>
-                <p><strong>Rating:</strong> 5/5</p>
-                <p><strong>Review:</strong> The dealer service was excellent. The staff was friendly and the buying process was smooth.</p>
+                <p><strong>Dealer:</strong> {POSTED_REVIEW['dealer_name']}</p>
+                <p><strong>Dealer ID:</strong> {POSTED_REVIEW['dealer_id']}</p>
+                <p><strong>Reviewer Name:</strong> {POSTED_REVIEW['reviewer']}</p>
+                <p><strong>Purchase Date:</strong> {POSTED_REVIEW['purchase_date']}</p>
+                <p><strong>Car Make:</strong> {POSTED_REVIEW['car_make']}</p>
+                <p><strong>Car Model:</strong> {POSTED_REVIEW['car_model']}</p>
+                <p><strong>Car Year:</strong> {POSTED_REVIEW['car_year']}</p>
+                <p><strong>Rating:</strong> {POSTED_REVIEW['rating']}/5</p>
+                <p><strong>Review Text:</strong> {POSTED_REVIEW['review']}</p>
+
+                <div class="sentiment-box">
+                    <img src="{img_uri}" alt="Positive sentiment image">
+                    <strong>Sentiment Image:</strong> Positive Review
+                </div>
             </div>
 
-            <a class="back-link" href="/dealer/1/details/">Back to Dealer Details</a>
+            <a class="btn" href="/dealer/1/details/?posted=true">View Dealer Details with Reviews</a>
         </div>
     </body>
     </html>
     """
+
     return HttpResponse(html)
