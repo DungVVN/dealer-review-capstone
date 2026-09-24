@@ -1,4 +1,4 @@
-# xrwvm-fullstack_developer_capstone
+# dealer-review-capstone
 
-Repository name: xrwvm-fullstack_developer_capstone  
+Repository name: dealer-review-capstone  
 Project name: fullstack_developer_capstone
